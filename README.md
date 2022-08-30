@@ -1,5 +1,5 @@
-# lcalc
-Photon energy units converter
+# lcalc - Photon energy units converter
+
 ![Alt Text](https://github.com/serhiykobyakov/lcalc/blob/main/Screenshot.gif)
 
 ### What is it
