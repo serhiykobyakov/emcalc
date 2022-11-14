@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-__version__ = '12.11.2022'
+__version__ = '14.11.2022'
 __author__ = 'Serhiy Kobyakov'
 
 
@@ -19,6 +19,7 @@ class LcalcFrame(wx.Frame):
     def __init__(self, parent, title):
         super().__init__(parent, title=title, style=wx.DEFAULT_FRAME_STYLE ^ wx.RESIZE_BORDER)
 
+        # set the application icon
         icon = wx.EmptyIcon()
         icon.CopyFromBitmap(wx.Bitmap("emcalc.ico", wx.BITMAP_TYPE_ANY))
         self.SetIcon(icon)
@@ -28,8 +29,8 @@ class LcalcFrame(wx.Frame):
         systemfont = wx.SystemSettings.GetFont(wx.SYS_DEFAULT_GUI_FONT)
         self.the_panel.SetFont(systemfont.Scale(2))
 
+        # create statusbar
         self.status_bar = self.CreateStatusBar(1)
-        # self.status_bar.SetStatusText('This goes in your statusbar')
 
         labelcm = wx.StaticText(self.the_panel, id=wx.ID_ANY, label=u'cm\u207b\u00b9')
         label_h_size, label_v_size = labelcm.GetTextExtent(labelcm.GetLabel())
