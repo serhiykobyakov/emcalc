@@ -17,3 +17,6 @@ For reporting [bugs, suggestions, patches](https://github.com/serhiykobyakov/lca
 
 ### License
 The project is licensed under the [MIT license](https://github.com/serhiykobyakov/lcalc/blob/main/LICENSE)
+
+### Links
+Classification according to [Wikipedia: Electromagnetic spectrum](https://en.wikipedia.org/wiki/Electromagnetic_spectrum)
