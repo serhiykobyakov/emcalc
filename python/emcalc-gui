@@ -1,10 +1,13 @@
 #!/usr/bin/python3
 
-__version__ = '14.11.2022'
+__version__ = '15.11.2022'
 __author__ = 'Serhiy Kobyakov'
 
-
 import wx
+from scipy.constants import h as the_h
+from scipy.constants import c as the_c
+from scipy.constants import e as the_e
+import math
 
 
 def str_is_float(the_str: str) -> bool:
@@ -20,7 +23,7 @@ class LcalcFrame(wx.Frame):
         super().__init__(parent, title=title, style=wx.DEFAULT_FRAME_STYLE ^ wx.RESIZE_BORDER)
 
         # set the application icon
-        icon = wx.EmptyIcon()
+        icon = wx.Icon()
         icon.CopyFromBitmap(wx.Bitmap("emcalc.ico", wx.BITMAP_TYPE_ANY))
         self.SetIcon(icon)
 
@@ -41,20 +44,20 @@ class LcalcFrame(wx.Frame):
         ev_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         # the nm row:
-        editnm = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(7 * label_v_size, label_v_size))
+        self.editnm = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
         labelnm = wx.StaticText(self.the_panel, id=wx.ID_ANY, label='nm', size=(label_h_size, label_v_size))
-        nm_sizer.Add(editnm, 1, wx.ALL | wx.EXPAND, 3)
+        nm_sizer.Add(self.editnm, 1, wx.ALL | wx.EXPAND, 3)
         nm_sizer.Add(labelnm, 0, wx.ALL, 3)
 
         # the cm-1 row:
-        editcm = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(7 * label_v_size, label_v_size))
-        cm_sizer.Add(editcm, 1, wx.ALL | wx.EXPAND, 3)
+        self.editcm = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
+        cm_sizer.Add(self.editcm, 1, wx.ALL | wx.EXPAND, 3)
         cm_sizer.Add(labelcm, 0, wx.ALL, 3)
 
         # the eV row:
-        editev = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(7 * label_v_size, label_v_size))
+        self.editev = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
         labelev = wx.StaticText(self.the_panel, id=wx.ID_ANY, label='eV', size=(label_h_size, label_v_size))
-        ev_sizer.Add(editev, 1, wx.ALL | wx.EXPAND, 3)
+        ev_sizer.Add(self.editev, 1, wx.ALL | wx.EXPAND, 3)
         ev_sizer.Add(labelev, 0, wx.ALL, 3)
 
         top_sizer.Add(nm_sizer, 0, wx.EXPAND)
@@ -68,16 +71,21 @@ class LcalcFrame(wx.Frame):
         self.Bind(wx.EVT_CHAR_HOOK, self.on_escape)
 
         # filter out digits and dots
-        editnm.Bind(wx.EVT_KEY_DOWN, self.filter_digits)
-        editcm.Bind(wx.EVT_KEY_DOWN, self.filter_digits)
-        editev.Bind(wx.EVT_KEY_DOWN, self.filter_digits)
+        self.editnm.Bind(wx.EVT_KEY_DOWN, self.catch_comma)
+        self.editcm.Bind(wx.EVT_KEY_DOWN, self.catch_comma)
+        self.editev.Bind(wx.EVT_KEY_DOWN, self.catch_comma)
 
         # check if we have a valid floats:
-        editnm.Bind(wx.EVT_CHAR, self.filter_floats)
-        editcm.Bind(wx.EVT_CHAR, self.filter_floats)
-        editev.Bind(wx.EVT_CHAR, self.filter_floats)
+        self.editnm.Bind(wx.EVT_CHAR, self.filter_characters)
+        self.editcm.Bind(wx.EVT_CHAR, self.filter_characters)
+        self.editev.Bind(wx.EVT_CHAR, self.filter_characters)
 
-        editnm.Bind(wx.EVT_TEXT, self.show_range)
+        self.editnm.Bind(wx.EVT_TEXT, self.show_range)
+
+        # do the math and show results
+        self.editnm.Bind(wx.EVT_KEY_UP, self.show_values)
+        self.editcm.Bind(wx.EVT_KEY_UP, self.show_values)
+        self.editev.Bind(wx.EVT_KEY_UP, self.show_values)
 
     def on_escape(self, event):
         # quit application if ESC pressed
@@ -86,62 +94,71 @@ class LcalcFrame(wx.Frame):
             self.Close()
         event.Skip()
 
-    def filter_digits(self, event):
-        # one filter for all inputs:
-        # only digits and decimal separators, no characters!
-        key_code = event.GetKeyCode()
-        # print(f"Key: {key_code}")
-
-        # Allow ASCII numerics and Backspace
-        if ord('0') <= key_code <= ord('9') or key_code == ord('.') or key_code == wx.WXK_BACK:
-            event.Skip()
-            return
-
-        if key_code == ord(','):
-            # substitute dot for comma so there would be no problems with calculations later
-            keyinput = wx.UIActionSimulator()
-            keyinput.Char(ord('.'))
-            return
-
-        # Block everything else
-        return
-
-    def filter_floats(self, event):
-        # check for a valid float on input
+    def catch_comma(self, event):
+        # substitute dot for comma so there would be no problems with calculations later
         key_code = event.GetKeyCode()
         the_obj = event.GetEventObject()
 
-        if str_is_float(the_obj.GetLineText(0) + chr(key_code)):
+        if key_code == ord(','):
+            if not '.' in the_obj.GetLineText(0):
+                keyinput = wx.UIActionSimulator()
+                keyinput.Char(ord('.'))
+        else:
             event.Skip()
-            return
 
-        # Handle BackSpace so we can edit values
-        if key_code == wx.WXK_BACK:
-            # print("BackSpace!")
+    def filter_characters(self, event):
+        # check input for a valid float or control characters
+        key_code = event.GetKeyCode()
+        print(f'key code: {key_code}, chr: {chr(key_code)}')
+        the_obj = event.GetEventObject()
+
+        if key_code >= 0 and key_code <= 7:
+            pass
+        elif key_code >= 8 and key_code <= 9:
             event.Skip()
-            return
-
-        # Block everything else
-        return
+        elif key_code >= 10 and key_code <= 26:
+            pass
+        elif key_code == 27:  # ESC
+            event.Skip()
+        elif key_code >= 28 and key_code <= 45:
+            pass
+        elif key_code == 46:  # .
+            if not '.' in the_obj.GetLineText(0):
+                event.Skip()
+        elif key_code == 47:  # /
+            pass
+        elif key_code >= 48 and key_code <= 57:  # 0..9
+            if str_is_float(the_obj.GetLineText(0) + chr(key_code)):
+                if float(the_obj.GetLineText(0) + chr(key_code)) >= 0:
+                    the_obj.SetModified(True)
+                    event.Skip()
+        elif key_code >= 58 and key_code <= 126:
+            pass
+        elif key_code == 127:  # DEL
+            event.Skip()
+        elif key_code >= 128 and key_code <= 255:
+            pass
+        else:
+            event.Skip()
 
     def show_range(self, event):
         the_obj = event.GetEventObject()
-        if str_is_float(the_obj.GetLineText(0)):
+        if len(the_obj.GetLineText(0)) > 0:
             val = float(the_obj.GetLineText(0))
             if val < 10:
-                self.status_bar.SetStatusText('too high!')
-
+                self.status_bar.SetStatusText('')
             elif val >= 10 and val < 100:
                 self.status_bar.SetStatusText('Extreme ultraviolet (E-UV)')
             elif val >= 100 and val < 280:
                 self.status_bar.SetStatusText('Ultraviolet (UV-C)')
             elif val >= 280 and val < 315:
                 self.status_bar.SetStatusText('Ultraviolet (UV-B)')
-            elif val >= 315 and val < 400:
+            elif val >= 315 and val < 380:
                 self.status_bar.SetStatusText('Ultraviolet (UV-A)')
-            elif val >= 400 and val < 750:
+            elif val >= 380 and val < 780:
                 self.status_bar.SetStatusText('Visible light')
-            elif val >= 750 and val < 1400:
+
+            elif val >= 780 and val < 1400:
                 self.status_bar.SetStatusText('Near infrared (IR-A)')
             elif val >= 1400 and val < 3000:
                 self.status_bar.SetStatusText('Short-wavelength infrared (IR-B)')
@@ -149,15 +166,118 @@ class LcalcFrame(wx.Frame):
                 self.status_bar.SetStatusText('Mid-wavelength infrared (IR-C)')
             elif val >= 8000 and val < 15000:
                 self.status_bar.SetStatusText('Long-wavelength infrared (IR-C)')
-            elif val >= 15000 and val < 1000000:
+            elif val >= 15_000 and val < 1000_000:
                 self.status_bar.SetStatusText('Far infrared (IR-C)')
-            elif val >= 1000000:
-                self.status_bar.SetStatusText('Wavelength is too large for one to be a photon')
+            elif val >= 1000_000 and val < 10_000_000:
+                self.status_bar.SetStatusText('Microwaves, Extremely high frequency (EHF)')
+            elif val >= 10_000_000 and val < 100_000_000:
+                self.status_bar.SetStatusText('Microwaves, Super high frequency (SHF)')
+            elif val >= 100_000_000 and val < 1000_000_000:
+                self.status_bar.SetStatusText('Microwaves, Ultra high frequency (UHF)')
+            elif val >= 1000_000_000 and val < 10_000_000_000:
+                self.status_bar.SetStatusText('Radio waves, Very high frequency (VHF)')
+            elif val >= 10_000_000_000 and val < 100_000_000_000:
+                self.status_bar.SetStatusText('Radio waves, High frequency (HF)')
+            elif val >= 100_000_000_000 and val < 1000_000_000_000:
+                self.status_bar.SetStatusText('Radio waves, Medium frequency (MF)')
+            elif val >= 1000_000_000_000 and val < 10_000_000_000_000:
+                self.status_bar.SetStatusText('Radio waves, Low frequency (LF)')
+            elif val >= 10_000_000_000_000 and val < 100_000_000_000_000:
+                self.status_bar.SetStatusText('Radio waves, Very low frequency (VLF)')
+            elif val >= 1000_000_000_000_000 and val < 10_000_000_000_000_000:
+                self.status_bar.SetStatusText('Radio waves, Super low frequency (SLF)')
+            elif val >= 10_000_000_000_000_000 and val < 100_000_000_000_000_000:
+                self.status_bar.SetStatusText('Radio waves, Extremely low frequency (ELF)')
+            elif val >= 100_000_000_000_000_000:
+                self.status_bar.SetStatusText('')
+
+    def show_values(self, event):
+        if self.editnm.IsModified():
+            if len(self.editnm.GetLineText(0)) > 0:
+                self.editcm.SetValue(nm_to_cm(self.editnm.GetLineText(0)))
+                self.editev.SetValue(nm_to_ev(self.editnm.GetLineText(0)))
+            self.editnm.SetModified(False)
+
+        if self.editcm.IsModified():
+            if len(self.editcm.GetLineText(0)) > 0:
+                self.editnm.SetValue(cm_to_nm(self.editcm.GetLineText(0)))
+                self.editev.SetValue(cm_to_ev(self.editcm.GetLineText(0)))
+            self.editcm.SetModified(False)
+
+        if self.editev.IsModified():
+            if len(self.editev.GetLineText(0)) > 0:
+                self.editnm.SetValue(ev_to_nm(self.editev.GetLineText(0)))
+                self.editcm.SetValue(ev_to_cm(self.editev.GetLineText(0)))
+            self.editev.SetModified(False)
+
+
+def get_round_unc(the_val: str) -> float:
+    # get the rounding uncertainty from the float which is in string variable
+    if '.' in the_val:
+        digits = len(the_val) - the_val.index('.') - 1
+    else:
+        digits = 0
+    return pow(10, -digits) * 0.5
+
+
+def round_value(the_val, the_unc: float) -> str:
+    # round the_val to the same place as two significant figures of the_unc
+    dec_place = 1 - int(math.floor(math.log10(the_unc)))
+    if dec_place < 0:
+        dec_place = 0
+    return '{1:.{0}f}'.format(dec_place, the_val)
+
+
+def nm_to_cm(the_nm_val: str) -> str:
+    # convert nm to cm^-1
+    the_value = 1e7 / float(the_nm_val)
+    the_unc = 1e7 * get_round_unc(the_nm_val) / (float(the_nm_val) ** 2)
+    return round_value(the_value, the_unc)
+
+
+def nm_to_ev(the_nm_val: str) -> str:
+    # convert nm to eV
+    scale = the_h * the_c / (1e-9 * the_e)
+    the_value = scale / float(the_nm_val)
+    the_unc = scale * get_round_unc(the_nm_val) / (float(the_nm_val) ** 2)
+    return round_value(the_value, the_unc)
+
+
+def cm_to_nm(the_cm_val: str) -> str:
+    # convert cm^-1 to nm
+    the_value = 1e7 / float(the_cm_val)
+    the_unc = 1e7 * get_round_unc(the_cm_val) / (float(the_cm_val) ** 2)
+    return round_value(the_value, the_unc)
+
+
+def cm_to_ev(the_cm_val: str) -> str:
+    # convert cm^-1 to eV
+    scale = the_h * the_c / (1e-2 * the_e)
+    the_value = scale * float(the_cm_val)
+    the_unc = scale * get_round_unc(the_cm_val)
+    return round_value(the_value, the_unc)
+
+
+def ev_to_nm(the_ev_val: str) -> str:
+    # convert eV to nm
+    scale = the_h * the_c / (1e-9 * the_e)
+    the_value = scale / float(the_ev_val)
+    the_unc = scale * get_round_unc(the_ev_val) / (float(the_ev_val) ** 2)
+    return round_value(the_value, the_unc)
+
+
+def ev_to_cm(the_ev_val: str) -> str:
+    # convert eV to cm^-1
+    scale = 1e-2 * the_e / (the_h * the_c)
+    the_value = scale * float(the_ev_val)
+    the_unc = scale * get_round_unc(the_ev_val)
+    return round_value(the_value, the_unc)
+
 
 if __name__ == "__main__":
     app = wx.App()
 
-    frame = LcalcFrame(None, "lcalc")
+    frame = LcalcFrame(None, "EMcalc")
     frame.Show()
 
     app.MainLoop()
