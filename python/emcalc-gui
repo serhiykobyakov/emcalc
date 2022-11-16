@@ -1,6 +1,6 @@
 #!/usr/bin/python3
 
-__version__ = '15.11.2022'
+__version__ = '16.11.2022'
 __author__ = 'Serhiy Kobyakov'
 
 import wx
@@ -10,12 +10,59 @@ from scipy.constants import e as the_e
 import math
 
 
-def str_is_float(the_str: str) -> bool:
-    try:
-        float(the_str)
-        return True
-    except ValueError:
-        return False
+class FloatTextCtrl(wx.TextCtrl):
+    # TextCtrl which accepts valid floats only (simple numbers, no scientific notation)
+    # you can safely make floats from the string without risk to crash the application
+    def __init__(self, parent, id=wx.ID_ANY, value="", pos=wx.DefaultPosition, size=wx.DefaultSize, style=0,
+                 validator=wx.DefaultValidator, name=wx.TextCtrlNameStr):
+        wx.TextCtrl.__init__(self, parent=parent, id=id, value=value, size=size, style=style)
+        self.Bind(wx.EVT_KEY_DOWN, lambda event: self.catch_comma(event))
+        self.Bind(wx.EVT_CHAR, lambda event: self.filter_num_and_control(event))
+
+    def catch_comma(self, event):
+        # substitute dot for comma so there would be no problems with calculations later
+        key_code = event.GetKeyCode()
+
+        if key_code == ord(','):
+            if not '.' in self.GetLineText(0):
+                keyinput = wx.UIActionSimulator()
+                keyinput.Char(ord('.'))
+        else:
+            event.Skip()
+
+    def filter_num_and_control(self, event):
+        # filter out inputs which are not numeric or widget controls
+        key_raw_value = self.GetValue().strip()
+        key_code = event.GetKeyCode()
+        # print(f'raw: {key_raw_value}, key code: {key_code}, char: {chr(key_code)}')
+        if 0 <= key_code <= 7:
+            pass
+        elif 8 <= key_code <= 9:
+            event.Skip()
+        elif 10 <= key_code <= 26:
+            pass
+        elif key_code == 27:  # ESC
+            event.Skip()
+        elif 28 <= key_code <= 45:
+            pass
+        elif key_code == 46:  # .
+            if not '.' in key_raw_value:
+                event.Skip()
+        elif key_code == 47:  # /
+            pass
+        elif 48 <= key_code <= 57:  # 0..9
+            if str_is_float(key_raw_value + chr(key_code)):
+                if float(key_raw_value + chr(key_code)) >= 0:
+                    self.SetModified(True)
+                    event.Skip()
+        elif 58 <= key_code <= 126:
+            pass
+        elif key_code == 127:  # DEL
+            event.Skip()
+        elif 128 <= key_code <= 255:
+            pass
+        else:
+            event.Skip()
 
 
 class LcalcFrame(wx.Frame):
@@ -44,20 +91,20 @@ class LcalcFrame(wx.Frame):
         ev_sizer = wx.BoxSizer(wx.HORIZONTAL)
 
         # the nm row:
-        self.editnm = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
+        self.edit_nm = FloatTextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
         labelnm = wx.StaticText(self.the_panel, id=wx.ID_ANY, label='nm', size=(label_h_size, label_v_size))
-        nm_sizer.Add(self.editnm, 1, wx.ALL | wx.EXPAND, 3)
+        nm_sizer.Add(self.edit_nm, 1, wx.ALL | wx.EXPAND, 3)
         nm_sizer.Add(labelnm, 0, wx.ALL, 3)
 
         # the cm-1 row:
-        self.editcm = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
-        cm_sizer.Add(self.editcm, 1, wx.ALL | wx.EXPAND, 3)
+        self.edit_cm = FloatTextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
+        cm_sizer.Add(self.edit_cm, 1, wx.ALL | wx.EXPAND, 3)
         cm_sizer.Add(labelcm, 0, wx.ALL, 3)
 
         # the eV row:
-        self.editev = wx.TextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
+        self.edit_ev = FloatTextCtrl(self.the_panel, style=wx.TE_RIGHT, size=(8 * label_v_size, label_v_size))
         labelev = wx.StaticText(self.the_panel, id=wx.ID_ANY, label='eV', size=(label_h_size, label_v_size))
-        ev_sizer.Add(self.editev, 1, wx.ALL | wx.EXPAND, 3)
+        ev_sizer.Add(self.edit_ev, 1, wx.ALL | wx.EXPAND, 3)
         ev_sizer.Add(labelev, 0, wx.ALL, 3)
 
         top_sizer.Add(nm_sizer, 0, wx.EXPAND)
@@ -70,22 +117,11 @@ class LcalcFrame(wx.Frame):
 
         self.Bind(wx.EVT_CHAR_HOOK, self.on_escape)
 
-        # filter out digits and dots
-        self.editnm.Bind(wx.EVT_KEY_DOWN, self.catch_comma)
-        self.editcm.Bind(wx.EVT_KEY_DOWN, self.catch_comma)
-        self.editev.Bind(wx.EVT_KEY_DOWN, self.catch_comma)
+        self.edit_nm.Bind(wx.EVT_KEY_UP, self.show_values)
+        self.edit_cm.Bind(wx.EVT_KEY_UP, self.show_values)
+        self.edit_ev.Bind(wx.EVT_KEY_UP, self.show_values)
 
-        # check if we have a valid floats:
-        self.editnm.Bind(wx.EVT_CHAR, self.filter_characters)
-        self.editcm.Bind(wx.EVT_CHAR, self.filter_characters)
-        self.editev.Bind(wx.EVT_CHAR, self.filter_characters)
-
-        self.editnm.Bind(wx.EVT_TEXT, self.show_range)
-
-        # do the math and show results
-        self.editnm.Bind(wx.EVT_KEY_UP, self.show_values)
-        self.editcm.Bind(wx.EVT_KEY_UP, self.show_values)
-        self.editev.Bind(wx.EVT_KEY_UP, self.show_values)
+        self.edit_nm.Bind(wx.EVT_TEXT, self.show_range)
 
     def on_escape(self, event):
         # quit application if ESC pressed
@@ -94,121 +130,83 @@ class LcalcFrame(wx.Frame):
             self.Close()
         event.Skip()
 
-    def catch_comma(self, event):
-        # substitute dot for comma so there would be no problems with calculations later
-        key_code = event.GetKeyCode()
-        the_obj = event.GetEventObject()
-
-        if key_code == ord(','):
-            if not '.' in the_obj.GetLineText(0):
-                keyinput = wx.UIActionSimulator()
-                keyinput.Char(ord('.'))
-        else:
-            event.Skip()
-
-    def filter_characters(self, event):
-        # check input for a valid float or control characters
-        key_code = event.GetKeyCode()
-        print(f'key code: {key_code}, chr: {chr(key_code)}')
-        the_obj = event.GetEventObject()
-
-        if key_code >= 0 and key_code <= 7:
-            pass
-        elif key_code >= 8 and key_code <= 9:
-            event.Skip()
-        elif key_code >= 10 and key_code <= 26:
-            pass
-        elif key_code == 27:  # ESC
-            event.Skip()
-        elif key_code >= 28 and key_code <= 45:
-            pass
-        elif key_code == 46:  # .
-            if not '.' in the_obj.GetLineText(0):
-                event.Skip()
-        elif key_code == 47:  # /
-            pass
-        elif key_code >= 48 and key_code <= 57:  # 0..9
-            if str_is_float(the_obj.GetLineText(0) + chr(key_code)):
-                if float(the_obj.GetLineText(0) + chr(key_code)) >= 0:
-                    the_obj.SetModified(True)
-                    event.Skip()
-        elif key_code >= 58 and key_code <= 126:
-            pass
-        elif key_code == 127:  # DEL
-            event.Skip()
-        elif key_code >= 128 and key_code <= 255:
-            pass
-        else:
-            event.Skip()
-
     def show_range(self, event):
+        # show hint in status bar
         the_obj = event.GetEventObject()
         if len(the_obj.GetLineText(0)) > 0:
             val = float(the_obj.GetLineText(0))
             if val < 10:
                 self.status_bar.SetStatusText('')
-            elif val >= 10 and val < 100:
+            elif 10 <= val < 100:
                 self.status_bar.SetStatusText('Extreme ultraviolet (E-UV)')
-            elif val >= 100 and val < 280:
+            elif 100 <= val < 280:
                 self.status_bar.SetStatusText('Ultraviolet (UV-C)')
-            elif val >= 280 and val < 315:
+            elif 280 <= val < 315:
                 self.status_bar.SetStatusText('Ultraviolet (UV-B)')
-            elif val >= 315 and val < 380:
+            elif 315 <= val < 380:
                 self.status_bar.SetStatusText('Ultraviolet (UV-A)')
-            elif val >= 380 and val < 780:
+            elif 380 <= val < 780:
                 self.status_bar.SetStatusText('Visible light')
-
-            elif val >= 780 and val < 1400:
+            elif 780 <= val < 1400:
                 self.status_bar.SetStatusText('Near infrared (IR-A)')
-            elif val >= 1400 and val < 3000:
+            elif 1400 <= val < 3000:
                 self.status_bar.SetStatusText('Short-wavelength infrared (IR-B)')
-            elif val >= 3000 and val < 8000:
+            elif 3000 <= val < 8000:
                 self.status_bar.SetStatusText('Mid-wavelength infrared (IR-C)')
-            elif val >= 8000 and val < 15000:
+            elif 8000 <= val < 15000:
                 self.status_bar.SetStatusText('Long-wavelength infrared (IR-C)')
-            elif val >= 15_000 and val < 1000_000:
+            elif 15_000 <= val < 1000_000:
                 self.status_bar.SetStatusText('Far infrared (IR-C)')
-            elif val >= 1000_000 and val < 10_000_000:
+            elif 1000_000 <= val < 10_000_000:
                 self.status_bar.SetStatusText('Microwaves, Extremely high frequency (EHF)')
-            elif val >= 10_000_000 and val < 100_000_000:
+            elif 10_000_000 <= val < 100_000_000:
                 self.status_bar.SetStatusText('Microwaves, Super high frequency (SHF)')
-            elif val >= 100_000_000 and val < 1000_000_000:
+            elif 100_000_000 <= val < 1000_000_000:
                 self.status_bar.SetStatusText('Microwaves, Ultra high frequency (UHF)')
-            elif val >= 1000_000_000 and val < 10_000_000_000:
+            elif 1000_000_000 <= val < 10_000_000_000:
                 self.status_bar.SetStatusText('Radio waves, Very high frequency (VHF)')
-            elif val >= 10_000_000_000 and val < 100_000_000_000:
+            elif 10_000_000_000 <= val < 100_000_000_000:
                 self.status_bar.SetStatusText('Radio waves, High frequency (HF)')
-            elif val >= 100_000_000_000 and val < 1000_000_000_000:
+            elif 100_000_000_000 <= val < 1000_000_000_000:
                 self.status_bar.SetStatusText('Radio waves, Medium frequency (MF)')
-            elif val >= 1000_000_000_000 and val < 10_000_000_000_000:
+            elif 1000_000_000_000 <= val < 10_000_000_000_000:
                 self.status_bar.SetStatusText('Radio waves, Low frequency (LF)')
-            elif val >= 10_000_000_000_000 and val < 100_000_000_000_000:
+            elif 10_000_000_000_000 <= val < 100_000_000_000_000:
                 self.status_bar.SetStatusText('Radio waves, Very low frequency (VLF)')
-            elif val >= 1000_000_000_000_000 and val < 10_000_000_000_000_000:
+            elif 1000_000_000_000_000 <= val < 10_000_000_000_000_000:
                 self.status_bar.SetStatusText('Radio waves, Super low frequency (SLF)')
-            elif val >= 10_000_000_000_000_000 and val < 100_000_000_000_000_000:
+            elif 10_000_000_000_000_000 <= val < 100_000_000_000_000_000:
                 self.status_bar.SetStatusText('Radio waves, Extremely low frequency (ELF)')
             elif val >= 100_000_000_000_000_000:
                 self.status_bar.SetStatusText('')
 
     def show_values(self, event):
-        if self.editnm.IsModified():
-            if len(self.editnm.GetLineText(0)) > 0:
-                self.editcm.SetValue(nm_to_cm(self.editnm.GetLineText(0)))
-                self.editev.SetValue(nm_to_ev(self.editnm.GetLineText(0)))
-            self.editnm.SetModified(False)
+        # do the math and show results in other text controls
+        if self.edit_nm.IsModified():
+            if len(self.edit_nm.GetLineText(0)) > 0:
+                self.edit_cm.SetValue(nm_to_cm(self.edit_nm.GetLineText(0)))
+                self.edit_ev.SetValue(nm_to_ev(self.edit_nm.GetLineText(0)))
+            self.edit_nm.SetModified(False)
 
-        if self.editcm.IsModified():
-            if len(self.editcm.GetLineText(0)) > 0:
-                self.editnm.SetValue(cm_to_nm(self.editcm.GetLineText(0)))
-                self.editev.SetValue(cm_to_ev(self.editcm.GetLineText(0)))
-            self.editcm.SetModified(False)
+        if self.edit_cm.IsModified():
+            if len(self.edit_cm.GetLineText(0)) > 0:
+                self.edit_nm.SetValue(cm_to_nm(self.edit_cm.GetLineText(0)))
+                self.edit_ev.SetValue(cm_to_ev(self.edit_cm.GetLineText(0)))
+            self.edit_cm.SetModified(False)
 
-        if self.editev.IsModified():
-            if len(self.editev.GetLineText(0)) > 0:
-                self.editnm.SetValue(ev_to_nm(self.editev.GetLineText(0)))
-                self.editcm.SetValue(ev_to_cm(self.editev.GetLineText(0)))
-            self.editev.SetModified(False)
+        if self.edit_ev.IsModified():
+            if len(self.edit_ev.GetLineText(0)) > 0:
+                self.edit_nm.SetValue(ev_to_nm(self.edit_ev.GetLineText(0)))
+                self.edit_cm.SetValue(ev_to_cm(self.edit_ev.GetLineText(0)))
+            self.edit_ev.SetModified(False)
+
+
+def str_is_float(the_str: str) -> bool:
+    try:
+        float(the_str)
+        return True
+    except ValueError:
+        return False
 
 
 def get_round_unc(the_val: str) -> float:
