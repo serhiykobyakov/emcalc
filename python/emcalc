@@ -1,0 +1,54 @@
+#!/usr/bin/python3
+
+__version__ = '17.11.2022'
+__author__ = 'Serhiy Kobyakov'
+
+from emcalc import str_is_float
+from emcalc import nm_to_cm
+from emcalc import nm_to_ev
+from emcalc import cm_to_nm
+from emcalc import cm_to_ev
+from emcalc import ev_to_nm
+from emcalc import ev_to_cm
+from emcalc import nm_to_range
+
+
+def print_hint():
+    print('  Please enter a float value following by units (nm, cm-1, eV) separated by space')
+    print('  for example: 123.4 nm\n  or Ctrl_d to exit\n')
+
+
+def print_answer(the_str: str):
+    if ',' in the_str:
+        the_str = the_str.replace(',', '.')
+    if ' ' in the_str and len(the_str.split()) == 2 and str_is_float(the_str.split()[0]):
+        the_val = the_str.split()[0].strip()
+        units = the_str.split()[1].strip().lower()
+        if '-1' in units:
+            units = units[:units.rfind('-1')]
+        if '^' in units:
+            units = units[:units.rfind('^')]
+        if units == 'nm':
+            print(f'  {nm_to_cm(the_val)} cm-1\n  {nm_to_ev(the_val)} eV\n  range: {nm_to_range(float(the_val))}\n')
+        elif units == 'cm':
+            print(f'  {cm_to_nm(the_val)} nm\n  {cm_to_ev(the_val)} eV')
+            print(f'  range: {nm_to_range(float(cm_to_nm(the_val)))}\n')
+        elif units == 'ev':
+            print(f'  {ev_to_nm(the_val)} nm\n  {ev_to_cm(the_val)} cm-1')
+            print(f'  range: {nm_to_range(float(ev_to_nm(the_val)))}\n')
+        else:
+            print_hint()
+    else:
+        print_hint()
+
+
+if __name__ == "__main__":
+    print('\n  Electromagnetic wave units calculator')
+    print('  Type the value following by units (nm, cm-1, eV) or Ctrl+d to exit\n')
+    while True:
+        try:
+            the_str = input('the value: ')
+            print_answer(the_str)
+        except EOFError as e:
+            print('\r', end='')
+            quit(0)
